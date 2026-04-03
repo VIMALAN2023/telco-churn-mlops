@@ -25,53 +25,30 @@ Production Deployment:
 """
 
 import os
+import json
 import pandas as pd
 import mlflow
 
-# === MODEL LOADING CONFIGURATION ===
-# IMPORTANT: This path is set during Docker container build
-# In development: uses local MLflow artifacts
-# In production: uses model copied to container at build time
 MODEL_DIR = "/app/model"
 
+# === MODEL LOAD ===
 try:
-    # Load the trained XGBoost model in MLflow pyfunc format
-    # This ensures compatibility regardless of the underlying ML library
     model = mlflow.pyfunc.load_model(MODEL_DIR)
     print(f"✅ Model loaded successfully from {MODEL_DIR}")
 except Exception as e:
-    print(f"❌ Failed to load model from {MODEL_DIR}: {e}")
-    # Fallback for local development (OPTIONAL)
-    try:
-        # Try loading from local MLflow tracking
-        import glob
-        local_model_paths = glob.glob("./mlruns/*/*/artifacts/model")
-        if local_model_paths:
-            latest_model = max(local_model_paths, key=os.path.getmtime)
-            model = mlflow.pyfunc.load_model(latest_model)
-            MODEL_DIR = latest_model
-            print(f"✅ Fallback: Loaded model from {latest_model}")
-        else:
-            raise Exception("No model found in local mlruns")
-    except Exception as fallback_error:
-        raise Exception(f"Failed to load model: {e}. Fallback failed: {fallback_error}")
+    raise Exception(f"❌ Failed to load model: {e}")
 
-# === FEATURE SCHEMA LOADING ===
-# CRITICAL: Load the exact feature column order used during training
-# This ensures the model receives features in the expected order
+# === FEATURE LOAD ===
 try:
-    # feature_file = os.path.join(MODEL_DIR, "feature_columns.txt")
-    # with open(feature_file) as f:
-    #     FEATURE_COLS = [ln.strip() for ln in f if ln.strip()]
+    feature_file = os.path.join(MODEL_DIR, "feature_columns.txt")
 
-    # Go up one level from model/ → artifacts/
-    artifact_dir = os.path.dirname(MODEL_DIR)
+    with open(feature_file, "r") as f:
+        try:
+            FEATURE_COLS = json.load(f)
+        except:
+            f.seek(0)
+            FEATURE_COLS = [line.strip() for line in f if line.strip()]
 
-    feature_file = os.path.join(artifact_dir, "feature_columns.txt")
-
-    with open(feature_file) as f:
-        import json
-        FEATURE_COLS = json.load(open(feature_file))
     print(f"✅ Loaded {len(FEATURE_COLS)} feature columns from training")
 
 except Exception as e:
